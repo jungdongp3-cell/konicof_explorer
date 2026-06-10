@@ -383,7 +383,7 @@
           <i class="fa-solid fa-key text-amber-500 mr-1"></i> Gemini API 키 (외부 배포 시에만 필요)
         </h4>
         <div class="flex gap-2">
-          <input id="geminiKeyInput" type="password" placeholder="AI Studio에서 발급받은 키 (AIza로 시작)"
+          <input id="geminiKeyInput" type="password" placeholder="발급받은 키 (AIza 또는 AQ.로 시작)"
                  class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
           <button onclick="saveGeminiKey()"
                   class="px-4 py-2 rounded-lg font-bold text-white bg-amber-500 hover:bg-amber-600 transition text-xs">
@@ -459,7 +459,7 @@ const DEFAULT_PDF = "rule(2026.6.4.).pdf";
 //   ※ 반드시 Google Cloud 콘솔에서 이 키에 "HTTP 리퍼러 제한"을 걸어
 //     본인 깃허브 주소(https://아이디.github.io/*)만 허용하세요. (아래 안내 참고)
 // ─────────────────────────────────────────────────
-const SHARED_GEMINI_KEY = "AIzaSyAQ.Ab8RN6JzSj4vUkYnhXGhTCxZJdMp0bH1MmY5zOuHbXH1JMv14g";
+const SHARED_GEMINI_KEY = "AQ.Ab8RN6JzSj4vUkYnhXGhTCxZJdMp0bH1MmY5zOuHbXH1JMv14g";
 
 // ─────────────────────────────────────────────────
 //  INIT
@@ -825,13 +825,18 @@ async function askClaude(system, userMsg) {
 }
 
 async function askGemini(key, prompt) {
-  // 2026.6 기준: 1.5/2.0 계열은 서비스 종료됨. 최신 모델명을 순서대로 시도.
-  const models = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+  // 키 종류 자동 감지:
+  //  - "AIza..." : Google AI Studio 키 → generativelanguage.googleapis.com
+  //  - "AQ...."  : Vertex AI 익스프레스 모드 키 → aiplatform.googleapis.com
+  const isVertex = key.startsWith('AQ.');
+  const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
   let lastErr = '';
   for (const model of models) {
+    const url = isVertex
+      ? `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent?key=${key}`
+      : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
     try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
@@ -1024,8 +1029,8 @@ function switchSideTab(tab) {
 function saveGeminiKey() {
   const v = document.getElementById('geminiKeyInput').value.trim();
   if (!v) { showToast('키를 입력하세요.', 'error'); return; }
-  if (!v.startsWith('AIza')) {
-    showToast('올바른 키가 아닙니다. AI Studio 키는 "AIza"로 시작합니다.', 'error');
+  if (!v.startsWith('AIza') && !v.startsWith('AQ.')) {
+    showToast('올바른 키가 아닙니다. AI Studio 키는 "AIza", Vertex 익스프레스 키는 "AQ."로 시작합니다.', 'error');
     return;
   }
   localStorage.setItem('gemini_api_key', v);
