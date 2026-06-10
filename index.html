@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>한국원자력협력재단 규정집 탐색기 V3</title>
+    <title>한국원자력협력재단 규정집 탐색기 V4</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -12,8 +12,16 @@
         body { font-family: 'Malgun Gothic', sans-serif; background-color: #f8fafc; }
         .pdf-container { background: #525659; overflow: auto; display: flex; justify-content: center; padding: 20px; }
         #pdfCanvas { max-width: 100%; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
-        .toc-item { cursor: pointer; transition: all 0.2s; }
-        .toc-item:hover { color: #2563eb; background-color: #eff6ff; }
+        
+        /* 목차 스타일 가독성 향상 */
+        .toc-item { cursor: pointer; transition: all 0.2s; display: flex; align-items: center; border-radius: 4px; }
+        .toc-item:hover { background-color: #eff6ff; color: #1e40af; }
+        .toc-parent { font-weight: bold; color: #1e3a8a; background-color: #f1f5f9; margin-top: 4px; }
+        .toc-child-container { display: none; margin-left: 10px; border-left: 2px solid #e2e8f0; }
+        .toc-child-container.active { display: block; }
+        .toggle-icon { transition: transform 0.2s; width: 20px; text-align: center; cursor: pointer; }
+        .toggle-icon.open { transform: rotate(90deg); }
+
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -32,7 +40,7 @@
             
             <div class="flex-1 max-w-2xl px-4 relative">
                 <div class="relative flex gap-2">
-                    <input type="text" id="aiSearchInput" placeholder="규정에 대해 질문하세요. (예: 대전 출장 시 식비 지급 기준은?)" class="w-full bg-white text-gray-900 rounded-full pl-5 pr-24 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-inner text-sm">
+                    <input type="text" id="aiSearchInput" placeholder="규정에 대해 질문하세요. (예: 대외활동 수당 기준 알려줘)" class="w-full bg-white text-gray-900 rounded-full pl-5 pr-24 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-inner text-sm">
                     <button onclick="askGemini()" class="absolute right-1 top-1 bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-1.5 rounded-full text-sm font-semibold hover:opacity-90 transition flex items-center gap-1">
                         <i class="fa-solid fa-sparkles"></i> AI 검색
                     </button>
@@ -40,9 +48,6 @@
             </div>
 
             <div class="flex items-center gap-4 w-1/4 justify-end">
-                <button onclick="openModal('calcModal')" class="bg-blue-800 hover:bg-blue-700 p-2 rounded-lg text-sm flex items-center gap-2 border border-blue-700 transition">
-                    <i class="fa-solid fa-calculator"></i> 여비 계산기
-                </button>
                 <button onclick="checkAdminPassword()" class="text-blue-300 hover:text-white transition p-2 bg-blue-800 rounded-lg border border-blue-700" title="관리자 메뉴">
                     <i class="fa-solid fa-lock text-sm mr-1"></i> 관리자 설정
                 </button>
@@ -57,12 +62,10 @@
         <div class="max-w-screen-2xl mx-auto flex gap-4">
             <div class="mt-1"><i class="fa-solid fa-robot text-indigo-600 text-xl"></i></div>
             <div class="flex-1">
-                <h3 class="text-sm font-bold text-indigo-900 mb-1">Gemini AI 규정 분석 답변</h3>
-                <div id="aiResponseContent" class="text-sm text-gray-700 leading-relaxed">
-                    분석을 시작합니다.
-                </div>
+                <h3 class="text-sm font-bold text-indigo-900 mb-1">Gemini AI 규정 검토 의견</h3>
+                <div id="aiResponseContent" class="text-sm text-gray-700 leading-relaxed italic">분석 중...</div>
             </div>
-            <button onclick="document.getElementById('aiResponsePanel').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 h-fit">
+            <button onclick="document.getElementById('aiResponsePanel').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
                 <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
@@ -70,96 +73,67 @@
 
     <main class="flex-1 flex overflow-hidden">
         
-        <aside class="w-72 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
-            <div class="p-3 bg-gray-50 border-b border-gray-200">
-                <h2 class="font-bold text-gray-700 text-sm"><i class="fa-solid fa-list-ul mr-1"></i> 규정 책갈피 목차</h2>
+        <aside class="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+            <div class="p-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="font-bold text-gray-700 text-sm"><i class="fa-solid fa-list-ul mr-1"></i> 규정 계층형 목차</h2>
+                <span class="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 cursor-help" title="하위 조항이 있는 경우 화살표를 눌러 펼치세요.">가이드</span>
             </div>
             <div class="flex-1 overflow-y-auto p-2">
                 <ul id="tocContainer" class="space-y-1 text-sm text-gray-700">
                     <li class="p-4 text-center text-gray-400 text-xs mt-10">
-                        <i class="fa-solid fa-spinner fa-spin text-xl mb-2 text-blue-600"></i><br>서버에서 최신 규정집을 자동으로 불러오는 중입니다.
+                        <i class="fa-solid fa-spinner fa-spin text-xl mb-2 text-blue-600"></i><br>서버 연결을 확인하고 있습니다...
                     </li>
                 </ul>
             </div>
         </aside>
 
         <section class="flex-1 flex flex-col bg-gray-100 relative">
-            <div class="bg-gray-200 px-4 py-2 flex justify-between items-center border-b border-gray-300 shadow-sm z-10">
+            <div class="bg-gray-200 px-4 py-2 flex justify-between items-center border-b border-gray-300 shadow-sm z-10 text-sm">
                 <div class="flex gap-2">
-                    <button onclick="changePage(-1)" class="bg-white border border-gray-300 px-3 py-1 rounded text-sm hover:bg-gray-50 font-semibold"><i class="fa-solid fa-chevron-left mr-1"></i> 이전</button>
-                    <span class="px-3 py-1 text-sm font-bold text-gray-700 bg-white rounded border border-gray-300"><span id="pageNum">0</span> / <span id="pageCount">0</span> 페이지</span>
-                    <button onclick="changePage(1)" class="bg-white border border-gray-300 px-3 py-1 rounded text-sm hover:bg-gray-50 font-semibold">다음 <i class="fa-solid fa-chevron-right ml-1"></i></button>
+                    <button onclick="changePage(-1)" class="bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 font-semibold"><i class="fa-solid fa-chevron-left mr-1"></i> 이전</button>
+                    <span class="px-4 py-1 text-gray-700 bg-white rounded border border-gray-300 font-bold tracking-widest"><span id="pageNum">0</span> / <span id="pageCount">0</span></span>
+                    <button onclick="changePage(1)" class="bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 font-semibold">다음 <i class="fa-solid fa-chevron-right ml-1"></i></button>
                 </div>
-                <div class="text-xs text-gray-500 font-medium">
-                    * 목차 항목을 클릭하면 해당 규정 페이지로 자동 이동합니다.
+                <div id="loadingIndicator" class="hidden text-blue-600 font-medium animate-pulse">
+                    <i class="fa-solid fa-sync fa-spin mr-1"></i> 페이지 로드 중...
                 </div>
             </div>
             
             <div class="pdf-container flex-1 h-full relative" id="pdfContainer">
                 <canvas id="pdfCanvas" class="bg-white hidden"></canvas>
                 <div id="pdfPlaceholder" class="text-center text-gray-400 mt-32">
-                    <i class="fa-solid fa-file-pdf text-6xl mb-4 text-gray-300"></i>
-                    <p id="statusMessage">문서를 확인하는 중입니다.</p>
+                    <i class="fa-solid fa-file-invoice text-6xl mb-4 text-gray-300"></i>
+                    <p id="statusMessage">문서를 대기 중입니다.</p>
                 </div>
             </div>
         </section>
     </main>
 
-    <div id="calcModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-        <div class="bg-white w-96 rounded-xl shadow-2xl overflow-hidden">
-            <div class="bg-blue-900 px-4 py-3 flex justify-between items-center text-white">
-                <h3 class="font-bold"><i class="fa-solid fa-calculator mr-2"></i>간이 여비 계산기</h3>
-                <button onclick="closeModal('calcModal')" class="hover:text-gray-300"><i class="fa-solid fa-xmark text-lg"></i></button>
-            </div>
-            <div class="p-5 space-y-4">
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">출장 구분</label>
-                    <select class="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none">
-                        <option>관내 출장</option>
-                        <option>관외 출장</option>
-                    </select>
-                </div>
-                <div class="flex gap-4">
-                    <div class="w-1/2">
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">숙박 일수</label>
-                        <input type="number" value="1" class="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none">
-                    </div>
-                    <div class="w-1/2">
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">직급 기준</label>
-                        <select class="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none">
-                            <option>실무자</option>
-                            <option>부서장</option>
-                        </select>
-                    </div>
-                </div>
-                <button class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded mt-2 transition">계산하기</button>
-            </div>
-        </div>
-    </div>
-
     <div id="adminModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
         <div class="bg-white w-[500px] rounded-xl shadow-2xl overflow-hidden">
             <div class="bg-gray-800 px-4 py-3 flex justify-between items-center text-white">
-                <h3 class="font-bold"><i class="fa-solid fa-lock-open mr-2"></i>관리자 시스템 수동 검증</h3>
+                <h3 class="font-bold"><i class="fa-solid fa-lock-open mr-2"></i>관리자 수동 로드</h3>
                 <button onclick="closeModal('adminModal')" class="hover:text-gray-300"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
-            <div class="p-6">
-                <p class="text-sm text-gray-600 mb-4">파일 자동 로드에 실패했거나 로컬 테스트를 진행할 경우 아래에서 직접 선택하십시오.</p>
-                <input type="file" id="pdfFileInput" accept="application/pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-gray-300 rounded-lg p-2">
+            <div class="p-6 text-sm">
+                <p class="text-gray-600 mb-4">자동 로드 경로: <code>./rule(2026.6.4.).pdf</code></p>
+                <input type="file" id="pdfFileInput" accept="application/pdf" class="block w-full text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-gray-300 rounded-lg p-2 mb-4">
+                <p class="text-xs text-red-400">* 깃허브에 배포 시 파일명을 정확히 일치시켜 업로드하면 자동으로 불러옵니다.</p>
             </div>
         </div>
     </div>
 
     <div id="apiModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center">
-        <div class="bg-white w-[400px] rounded-xl shadow-2xl overflow-hidden">
-            <div class="bg-blue-600 px-4 py-3 flex justify-between items-center text-white">
-                <h3 class="font-bold"><i class="fa-solid fa-key mr-2"></i>Gemini API 설정</h3>
+        <div class="bg-white w-[450px] rounded-xl shadow-2xl overflow-hidden font-sans">
+            <div class="bg-indigo-600 px-4 py-3 flex justify-between items-center text-white">
+                <h3 class="font-bold"><i class="fa-solid fa-key mr-2"></i>Gemini AI API Key</h3>
                 <button onclick="closeModal('apiModal')" class="hover:text-gray-300"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
             <div class="p-5">
-                <label class="block text-sm font-semibold text-gray-700 mb-1">Google AI Studio API Key</label>
-                <input type="password" id="geminiApiKey" placeholder="API Key 입력" class="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none mb-3">
-                <button onclick="saveApiKey()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded transition">저장하기</button>
+                <label class="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">Enter Gemini API Key</label>
+                <input type="password" id="geminiApiKey" placeholder="AI Studio에서 발급받은 키를 입력하세요" class="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none mb-3">
+                <p class="text-[11px] text-gray-400 leading-normal mb-5">발급처: <a href="https://aistudio.google.com/" target="_blank" class="text-blue-500 underline">Google AI Studio</a>. 키는 브라우저 내부(LocalStorage)에만 저장됩니다.</p>
+                <button onclick="saveApiKey()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg shadow-md transition">인증 키 저장</button>
             </div>
         </div>
     </div>
@@ -168,186 +142,189 @@
         let pdfDoc = null;
         let pageNum = 1;
         let pdfTextContent = "";
-        const defaultPdfUrl = 'rule(2026.6.4.).pdf'; // 서버에 저장해 둘 기본 파일명
+        const defaultPdfUrl = 'rule(2026.6.4.).pdf';
 
-        // 초기 자동 로드 실행
-        window.addEventListener('DOMContentLoaded', () => {
-            loadDefaultPdf(defaultPdfUrl);
-        });
+        // 초기 시작
+        window.addEventListener('DOMContentLoaded', () => loadDefaultPdf(defaultPdfUrl));
 
-        // 서버에서 자동으로 PDF를 로드하는 함수
         function loadDefaultPdf(url) {
             pdfjsLib.getDocument(url).promise.then(pdf => {
                 initializePdf(pdf, `서버 연동 완료: ${url}`);
             }).catch(err => {
-                console.log("기본 파일 자동 로드 실패. 수동 업로드 대기.", err);
-                document.getElementById('currentVersion').innerText = "규정집 파일 미발견";
-                document.getElementById('statusMessage').innerText = "서버 경로에 rule(2026.6.4.).pdf 파일이 없거나 로컬 환경입니다. 관리자 메뉴를 통해 파일을 수동으로 선택해 주십시오.";
-                document.getElementById('tocContainer').innerHTML = '<li class="p-3 text-amber-600 text-xs text-center">자동 로드 실패<br>관리자 설정을 통해 문서를 연동하십시오.</li>';
+                document.getElementById('currentVersion').innerText = "파일 자동 로드 대기";
+                document.getElementById('statusMessage').innerText = "서버 폴더 내에 rule(2026.6.4.).pdf 파일이 없거나 로컬 테스트 모드입니다.";
+                document.getElementById('tocContainer').innerHTML = '<li class="p-3 text-amber-600 text-xs text-center font-medium">관리자 메뉴에서<br>파일을 직접 선택해 주십시오.</li>';
             });
         }
 
-        // 관리자 패스워드 확인 함수
         function checkAdminPassword() {
             const pw = prompt("관리자 비밀번호를 입력해 주십시오.");
-            if (pw === "ghdi1004!") {
-                openModal('adminModal');
-            } else if (pw !== null) {
-                alert("비밀번호가 일치하지 않습니다.");
-            }
+            if (pw === "ghdi1004!") openModal('adminModal');
+            else if (pw !== null) alert("인증에 실패했습니다.");
         }
 
-        // 수동 파일 선택 시 처리 처리
         document.getElementById('pdfFileInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (!file || file.type !== 'application/pdf') return alert('PDF 파일 형식만 지정할 수 있습니다.');
-            
-            const fileReader = new FileReader();
-            fileReader.onload = function() {
+            if (!file || file.type !== 'application/pdf') return alert('PDF 형식만 지원합니다.');
+            const reader = new FileReader();
+            reader.onload = function() {
                 const typedarray = new Uint8Array(this.result);
                 pdfjsLib.getDocument(typedarray).promise.then(pdf => {
-                    initializePdf(pdf, `로컬 연동 완료: ${file.name}`);
+                    initializePdf(pdf, `로컬 파일 로드: ${file.name}`);
                     closeModal('adminModal');
                 });
             };
-            fileReader.readAsArrayBuffer(file);
+            reader.readAsArrayBuffer(file);
         });
 
-        // PDF 공통 초기화 프로세스
         function initializePdf(pdf, versionText) {
             pdfDoc = pdf;
             document.getElementById('pageCount').textContent = pdf.numPages;
             document.getElementById('currentVersion').innerText = versionText;
             document.getElementById('pdfPlaceholder').style.display = 'none';
             document.getElementById('pdfCanvas').style.display = 'block';
-            
             renderPage(pageNum);
             buildToc(pdf);
             extractTextForAI(pdf);
         }
 
-        // 책갈피 구조 렌더링
+        // --- 계층형 목차 생성 로직 ---
         async function buildToc(pdf) {
             const outline = await pdf.getOutline();
-            const tocContainer = document.getElementById('tocContainer');
-            tocContainer.innerHTML = '';
+            const container = document.getElementById('tocContainer');
+            container.innerHTML = '';
 
             if (!outline || outline.length === 0) {
-                tocContainer.innerHTML = '<li class="p-3 text-red-500 text-xs text-center">추출 가능한 책갈피 조항이 존재하지 않습니다.</li>';
+                container.innerHTML = '<li class="p-3 text-red-400 text-xs text-center font-bold">책갈피 데이터가 없는 문서입니다.</li>';
                 return;
             }
 
-            function renderItems(items, container, depth = 0) {
+            function renderOutline(items, parentUl) {
                 items.forEach(item => {
                     const li = document.createElement('li');
-                    const paddingLeft = depth * 12 + 12; 
-                    li.className = `toc-item py-2 border-b border-gray-100 text-gray-700 text-xs font-medium`;
-                    li.style.paddingLeft = `${paddingLeft}px`;
-                    li.innerHTML = `<span class="truncate block pr-2"><i class="fa-regular fa-file-lines text-gray-400 mr-1.5"></i>${item.title}</span>`;
-                    
-                    li.onclick = async (e) => {
-                        e.stopPropagation();
+                    li.className = "flex flex-col mb-0.5";
+
+                    const row = document.createElement('div');
+                    row.className = "toc-item px-2 py-2 text-xs transition-colors";
+                    if (item.items && item.items.length > 0) row.classList.add("toc-parent");
+
+                    // 펼치기/접기 버튼
+                    if (item.items && item.items.length > 0) {
+                        const toggle = document.createElement('span');
+                        toggle.className = "toggle-icon text-[10px] mr-1 text-gray-500 hover:text-blue-500";
+                        toggle.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+                        toggle.onclick = (e) => {
+                            e.stopPropagation();
+                            const subUl = li.querySelector('ul');
+                            const isOpen = subUl.classList.toggle('active');
+                            toggle.classList.toggle('open', isOpen);
+                        };
+                        row.appendChild(toggle);
+                    } else {
+                        const dot = document.createElement('span');
+                        dot.className = "w-5 text-center text-[8px] text-gray-300 mr-1";
+                        dot.innerHTML = '<i class="fa-solid fa-circle"></i>';
+                        row.appendChild(dot);
+                    }
+
+                    // 제목 텍스트 및 이동 기능
+                    const titleSpan = document.createElement('span');
+                    titleSpan.className = "flex-1 truncate cursor-pointer select-none";
+                    titleSpan.textContent = item.title;
+                    titleSpan.onclick = async () => {
                         if (item.dest) {
-                            const destIndex = await pdf.getPageIndex(item.dest[0]);
-                            pageNum = destIndex + 1;
+                            const idx = await pdf.getPageIndex(item.dest[0]);
+                            pageNum = idx + 1;
                             renderPage(pageNum);
                         }
                     };
-                    container.appendChild(li);
+                    row.appendChild(titleSpan);
 
+                    li.appendChild(row);
+
+                    // 자식 항목 (Expand/Collapse 대상)
                     if (item.items && item.items.length > 0) {
-                        const ul = document.createElement('ul');
-                        renderItems(item.items, ul, depth + 1);
-                        container.appendChild(ul);
+                        const childUl = document.createElement('ul');
+                        childUl.className = "toc-child-container";
+                        renderOutline(item.items, childUl);
+                        li.appendChild(childUl);
                     }
+
+                    parentUl.appendChild(li);
                 });
             }
-            renderItems(outline, tocContainer);
+            renderOutline(outline, container);
         }
 
-        function renderPage(num) {
+        async function renderPage(num) {
             if (!pdfDoc) return;
-            pdfDoc.getPage(num).then(page => {
-                const canvas = document.getElementById('pdfCanvas');
-                const ctx = canvas.getContext('2d');
-                const viewport = page.getViewport({scale: 1.5});
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
+            const indicator = document.getElementById('loadingIndicator');
+            indicator.classList.remove('hidden');
 
-                const renderContext = {
-                    canvasContext: ctx,
-                    viewport: viewport
-                };
-                page.render(renderContext);
-                document.getElementById('pageNum').textContent = num;
-            });
+            const page = await pdfDoc.getPage(num);
+            const canvas = document.getElementById('pdfCanvas');
+            const ctx = canvas.getContext('2d');
+            const viewport = page.getViewport({scale: 1.5});
+            
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            await page.render({canvasContext: ctx, viewport: viewport}).promise;
+            
+            document.getElementById('pageNum').textContent = num;
+            indicator.classList.add('hidden');
         }
 
         function changePage(offset) {
             if (!pdfDoc) return;
-            if (pageNum + offset <= 0 || pageNum + offset > pdfDoc.numPages) return;
-            pageNum += offset;
-            renderPage(pageNum);
+            const newPage = pageNum + offset;
+            if (newPage > 0 && newPage <= pdfDoc.numPages) {
+                pageNum = newPage;
+                renderPage(pageNum);
+            }
         }
 
         function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
         function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
         function saveApiKey() {
             localStorage.setItem('gemini_api_key', document.getElementById('geminiApiKey').value);
-            alert('Gemini API 인증 키가 로컬에 안전하게 보관되었습니다.');
+            alert('인증 키가 저장되었습니다.');
             closeModal('apiModal');
         }
 
         async function extractTextForAI(pdf) {
             pdfTextContent = "";
-            const maxPages = Math.min(pdf.numPages, 30); 
-            for (let i = 1; i <= maxPages; i++) {
+            const max = Math.min(pdf.numPages, 40); 
+            for (let i = 1; i <= max; i++) {
                 const page = await pdf.getPage(i);
-                const textContent = await page.getTextContent();
-                const pageText = textContent.items.map(item => item.str).join(' ');
-                pdfTextContent += pageText + "\n";
+                const content = await page.getTextContent();
+                pdfTextContent += content.items.map(s => s.str).join(' ') + "\n";
             }
         }
 
         async function askGemini() {
-            const apiKey = localStorage.getItem('gemini_api_key');
-            if (!apiKey) return alert('우측 상단의 열쇠 메뉴를 통해 Gemini API 인증 키를 먼저 등록해 주십시오.');
-            
-            const question = document.getElementById('aiSearchInput').value;
-            if (!question.trim()) return alert('검색하거나 질문할 세부 내용을 입력해 주십시오.');
-            if (!pdfTextContent) return alert('연동된 규정집 데이터가 전무합니다.');
+            const key = localStorage.getItem('gemini_api_key');
+            if (!key) return alert('API Key를 먼저 등록하세요.');
+            const q = document.getElementById('aiSearchInput').value;
+            if (!q.trim()) return;
 
             const panel = document.getElementById('aiResponsePanel');
-            const contentBox = document.getElementById('aiResponseContent');
+            const box = document.getElementById('aiResponseContent');
             panel.classList.remove('hidden');
-            contentBox.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> 문서를 면밀히 대조하여 규정 검토 의견을 수립하고 있습니다.';
+            box.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> 규정집을 분석하는 중입니다...';
 
-            const prompt = `
-            너는 한국원자력협력재단(KONICOF)의 내부 규정 지침 안내원이야.
-            제공된 [재단 규정집 문맥]만을 철저히 파악하여 답변의 객관성을 유지하며 기술해 줘.
-            반드시 해당 지침이 명시된 조항 및 규칙 명칭을 답변 내용에 정확히 포함하도록 구성해 줘.
-            
-            [직원 질의 사항]: ${question}
-            
-            [재단 규정집 문맥]:
-            ${pdfTextContent}
-            `;
+            const prompt = `너는 한국원자력협력재단의 내부 규정 상담원이야. 아래 [규정 텍스트]를 바탕으로 직원의 질문에 근거 조항을 명시하여 친절히 답해줘. \n\n[질문]: ${q}\n\n[규정 텍스트]: ${pdfTextContent}`;
 
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }]
-                    })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({contents: [{parts: [{text: prompt}]}]})
                 });
-                const data = await response.json();
-                if(data.error) throw new Error(data.error.message);
-                
+                const data = await res.json();
                 const answer = data.candidates[0].content.parts[0].text;
-                contentBox.innerHTML = answer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            } catch (error) {
-                contentBox.innerHTML = `<span class="text-red-600">요청 처리 중 오류가 식별되었습니다: ${error.message}</span>`;
+                box.innerHTML = answer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            } catch (e) {
+                box.innerHTML = '<span class="text-red-500 font-bold">오류: 답변을 생성하지 못했습니다. 키가 정확한지 확인하세요.</span>';
             }
         }
     </script>
