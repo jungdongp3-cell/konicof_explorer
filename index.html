@@ -64,8 +64,16 @@
     window.dispatchEvent(new CustomEvent('firebase-init-done'));
   </script>
 
-  <script>pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    // ★ 한글(CJK) 폰트 렌더링 필수 설정 — cMap이 없으면 한글이 깨집니다.
+    const PDF_OPTS = {
+      cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+      cMapPacked: true,
+      standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+    };
+  </script>
 
   <style>
     :root {
@@ -93,7 +101,8 @@
     .toggle-btn.open { transform:rotate(90deg); }
 
     /* PDF 캔버스 */
-    #pdfCanvas { box-shadow:0 8px 30px rgba(0,0,0,.4); border-radius:4px; max-width:100%; }
+    #pdfCanvas, #pdfCanvas2 { box-shadow:0 8px 30px rgba(0,0,0,.4); border-radius:4px; max-width:100%; background:#fff; }
+    #canvasWrap.spread #pdfCanvas, #canvasWrap.spread #pdfCanvas2 { max-width:calc(50% - 6px); }
     .pdf-bg { background:#404040; overflow:auto; display:flex;
               justify-content:center; padding:24px; flex:1; }
 
@@ -276,6 +285,17 @@
           </button>
         </div>
         <div class="flex items-center gap-3">
+          <!-- 1쪽 / 2쪽 보기 토글 -->
+          <div class="flex rounded-lg overflow-hidden border border-gray-300 text-xs">
+            <button onclick="setSpread(false)" id="btn-single"
+                    class="spread-btn px-3 py-1 font-semibold bg-blue-600 text-white transition">
+              <i class="fa-solid fa-file mr-1"></i>1쪽
+            </button>
+            <button onclick="setSpread(true)" id="btn-double"
+                    class="spread-btn px-3 py-1 font-semibold bg-white text-gray-500 hover:bg-blue-50 transition">
+              <i class="fa-solid fa-book-open mr-1"></i>2쪽
+            </button>
+          </div>
           <label class="text-xs text-gray-500">
             배율
             <select id="scaleSelect" onchange="reRenderPage()"
@@ -300,7 +320,10 @@
             자동 로드 경로: <code>rule(2026.6.4.).pdf</code>
           </p>
         </div>
-        <canvas id="pdfCanvas" class="hidden"></canvas>
+        <div id="canvasWrap" class="hidden flex gap-3 items-start">
+          <canvas id="pdfCanvas"></canvas>
+          <canvas id="pdfCanvas2" class="hidden"></canvas>
+        </div>
       </div>
     </div>
 
@@ -352,6 +375,26 @@
                       hover:file:bg-blue-200 border border-gray-300 rounded-lg p-1.5" />
         <p class="text-[11px] text-gray-400 mt-1.5">
           GitHub Pages 배포 시 <code>rule(2026.6.4.).pdf</code> 로 파일명을 맞춰 업로드하면 자동 로드됩니다.
+        </p>
+      </div>
+      <!-- Gemini API 키 (외부 배포용) -->
+      <div class="bg-gray-50 rounded-xl p-4 border border-gray-200">
+        <h4 class="font-bold text-gray-700 mb-2">
+          <i class="fa-solid fa-key text-amber-500 mr-1"></i> Gemini API 키 (외부 배포 시에만 필요)
+        </h4>
+        <div class="flex gap-2">
+          <input id="geminiKeyInput" type="password" placeholder="AI Studio에서 발급받은 키"
+                 class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+          <button onclick="saveGeminiKey()"
+                  class="px-4 py-2 rounded-lg font-bold text-white bg-amber-500 hover:bg-amber-600 transition text-xs">
+            저장
+          </button>
+        </div>
+        <p class="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
+          claude.ai 미리보기에서는 키 없이 AI가 작동합니다.
+          GitHub Pages 등 외부 배포 시에만
+          <a href="https://aistudio.google.com/" target="_blank" class="text-blue-500 underline">Google AI Studio</a>
+          무료 키를 등록하세요. 키는 각 직원 브라우저(LocalStorage)에만 저장됩니다.
         </p>
       </div>
       <!-- Firebase 규정 추가 -->
@@ -421,7 +464,7 @@ window.addEventListener('firebase-regs-updated', renderDbList);
 //  PDF LOAD
 // ─────────────────────────────────────────────────
 function loadDefaultPdf() {
-  pdfjsLib.getDocument(DEFAULT_PDF).promise
+  pdfjsLib.getDocument({ url: DEFAULT_PDF, ...PDF_OPTS }).promise
     .then(pdf => initPdf(pdf, DEFAULT_PDF))
     .catch(() => {
       setBadge('파일 없음 — 관리자에서 업로드');
@@ -442,7 +485,7 @@ function onFileUpload(e) {
   }
   const reader = new FileReader();
   reader.onload = ev => {
-    pdfjsLib.getDocument(new Uint8Array(ev.target.result)).promise
+    pdfjsLib.getDocument({ data: new Uint8Array(ev.target.result), ...PDF_OPTS }).promise
       .then(pdf => { initPdf(pdf, file.name); closeModal('adminModal'); });
   };
   reader.readAsArrayBuffer(file);
@@ -454,31 +497,67 @@ async function initPdf(pdf, label) {
   document.getElementById('totPage').textContent = pdf.numPages;
   setBadge(label);
   document.getElementById('pdfPlaceholder').style.display = 'none';
-  document.getElementById('pdfCanvas').classList.remove('hidden');
+  document.getElementById('canvasWrap').classList.remove('hidden');
   await renderPage(pdfPage);
   buildToc(pdf);
   await extractPdfText(pdf);
   buildFuseIndex();
 }
 
+let spreadMode = false;   // false: 1쪽 / true: 2쪽
+
 async function renderPage(num) {
   if (!pdfDoc) return;
   document.getElementById('pdfSpinner').classList.remove('hidden');
   const scale = parseFloat(document.getElementById('scaleSelect').value);
-  const page = await pdfDoc.getPage(num);
-  const vp   = page.getViewport({ scale });
-  const canvas = document.getElementById('pdfCanvas');
+
+  await drawToCanvas('pdfCanvas', num, scale);
+
+  const c2 = document.getElementById('pdfCanvas2');
+  if (spreadMode && num + 1 <= pdfDoc.numPages) {
+    c2.classList.remove('hidden');
+    await drawToCanvas('pdfCanvas2', num + 1, scale);
+  } else {
+    c2.classList.add('hidden');
+  }
+
+  document.getElementById('curPage').textContent =
+    spreadMode && num + 1 <= pdfDoc.numPages ? `${num}-${num + 1}` : num;
+  document.getElementById('pdfSpinner').classList.add('hidden');
+}
+
+async function drawToCanvas(canvasId, pageNo, scale) {
+  const page   = await pdfDoc.getPage(pageNo);
+  const vp     = page.getViewport({ scale });
+  const canvas = document.getElementById(canvasId);
   canvas.height = vp.height;
   canvas.width  = vp.width;
   await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-  document.getElementById('curPage').textContent = num;
-  document.getElementById('pdfSpinner').classList.add('hidden');
+}
+
+function setSpread(on) {
+  spreadMode = on;
+  document.getElementById('canvasWrap').classList.toggle('spread', on);
+  // 2쪽 모드에서는 홀수 페이지에서 시작하도록 보정
+  if (on && pdfPage % 2 === 0 && pdfPage > 1) pdfPage -= 1;
+  document.querySelectorAll('.spread-btn').forEach(b => {
+    const active = (b.id === 'btn-double') === on;
+    b.classList.toggle('bg-blue-600', active);
+    b.classList.toggle('text-white', active);
+    b.classList.toggle('bg-white', !active);
+    b.classList.toggle('text-gray-500', !active);
+  });
+  renderPage(pdfPage);
 }
 
 function changePdfPage(delta) {
   if (!pdfDoc) return;
-  const n = pdfPage + delta;
-  if (n >= 1 && n <= pdfDoc.numPages) { pdfPage = n; renderPage(pdfPage); }
+  const step = spreadMode ? delta * 2 : delta;
+  // ±10 버튼은 양면에서도 10페이지 그대로 이동
+  const realStep = Math.abs(delta) >= 10 ? delta : step;
+  let n = pdfPage + realStep;
+  n = Math.max(1, Math.min(n, pdfDoc.numPages));
+  if (n !== pdfPage) { pdfPage = n; renderPage(pdfPage); }
 }
 
 function reRenderPage() { renderPage(pdfPage); }
@@ -655,7 +734,10 @@ function escHtml(s) {
 }
 
 // ─────────────────────────────────────────────────
-//  AI 답변 (Claude Sonnet — 이 artifact 자체가 AI 내장)
+//  AI 답변 — 3단계 자동 전환
+//  ① Claude 내장 (claude.ai 미리보기에서만 작동, 키 불필요)
+//  ② Gemini API (외부 배포 시 — 관리자에서 키 1회 등록)
+//  ③ AI 불가 시 → Fuse 퍼지 검색으로 관련 조항 직접 제시
 // ─────────────────────────────────────────────────
 async function handleAsk() {
   const q = document.getElementById('aiInput').value.trim();
@@ -671,42 +753,130 @@ async function handleAsk() {
   content.innerHTML = `<span class="text-indigo-400 animate-pulse">
     <i class="fa-solid fa-spinner fa-spin mr-1"></i>규정집을 분석하는 중입니다...</span>`;
 
-  // 규정 텍스트 중 관련 청크만 추출 (Fuse)
+  // 관련 청크 추출 (Fuse)
+  let hits = [];
   let context = pdfText;
   if (fuseIndex) {
-    const hits = fuseIndex.search(q, { limit: 12 });
+    hits = fuseIndex.search(q, { limit: 12 });
     if (hits.length) context = hits.map(h => `[${h.item.page}p] ${h.item.text}`).join('\n');
   }
 
-  const systemPrompt = `당신은 한국원자력협력재단(KONICOF)의 내부 규정 전문 상담원입니다.
+  const sysPrompt = `당신은 한국원자력협력재단(KONICOF)의 내부 규정 전문 상담원입니다.
 아래 [규정 텍스트]만을 근거로 직원의 질문에 답하세요.
 - 반드시 근거 조항과 페이지 번호를 명시하세요.
 - 규정에 없는 내용은 "규정에서 확인되지 않습니다"라고 답하세요.
 - 답변은 명확하고 간결하게, 한국어로 작성하세요.`;
-
   const userMsg = `[질문]: ${q}\n\n[규정 텍스트]:\n${context.slice(0, 6000)}`;
 
+  // ① Claude 내장 시도 (claude.ai 미리보기에서만 성공)
+  let claudeErr = null, geminiErr = null;
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMsg }]
-      })
-    });
-    const data = await res.json();
-    const answer = data.content?.[0]?.text || "응답을 받지 못했습니다.";
-    content.innerHTML = answer
-      .replace(/\n/g, '<br>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-800">$1</strong>');
-  } catch(e) {
-    content.innerHTML = `<span class="text-red-500">
-      <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-      오류가 발생했습니다: ${e.message}</span>`;
+    const answer = await askClaude(sysPrompt, userMsg);
+    renderAiAnswer(content, answer, 'Claude');
+    return;
+  } catch(e) { claudeErr = e.message; }
+
+  // ② Gemini 키가 있으면 시도
+  const gKey = localStorage.getItem('gemini_api_key');
+  if (gKey) {
+    try {
+      const answer = await askGemini(gKey, sysPrompt + '\n\n' + userMsg);
+      renderAiAnswer(content, answer, 'Gemini');
+      return;
+    } catch(e) { geminiErr = e.message; }
   }
+
+  // ③ AI 불가 → Fuse 검색 결과로 관련 조항 직접 제시
+  renderFallback(content, q, hits, { gKey, geminiErr });
+}
+
+async function askClaude(system, userMsg) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system,
+      messages: [{ role: "user", content: userMsg }]
+    })
+  });
+  if (!res.ok) throw new Error('claude-unavailable');
+  const data = await res.json();
+  const text = data.content?.map(b => b.text || '').join('') || '';
+  if (!text) throw new Error('empty');
+  return text;
+}
+
+async function askGemini(key, prompt) {
+  // 2026.6 기준: 1.5/2.0 계열은 서비스 종료됨. 최신 모델명을 순서대로 시도.
+  const models = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+  let lastErr = '';
+  for (const model of models) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      const data = await res.json();
+      if (!res.ok) { lastErr = data.error?.message || `HTTP ${res.status}`; continue; }
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text;
+      lastErr = '빈 응답';
+    } catch(e) { lastErr = e.message; }
+  }
+  throw new Error(lastErr || 'gemini-unavailable');
+}
+
+function renderAiAnswer(el, answer, provider) {
+  el.innerHTML =
+    `<span class="text-[10px] text-indigo-400 font-bold">[${provider} 응답]</span><br>` +
+    answer.replace(/\n/g, '<br>')
+          .replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-800">$1</strong>');
+}
+
+function renderFallback(el, q, hits, diag) {
+  const { gKey, geminiErr } = diag || {};
+  // 진단 메시지 구성
+  let reason;
+  if (!gKey) {
+    reason = `현재 환경(로컬 파일/외부 서버)에서는 내장 AI를 쓸 수 없고, Gemini API 키도 등록되지 않았습니다.<br>
+      <span class="text-gray-500 font-normal">→ 해결: <b>관리자 패널 → Gemini API 키</b>에
+      <a href="https://aistudio.google.com/" target="_blank" class="text-blue-500 underline">Google AI Studio</a>
+      무료 키를 등록하세요. 1회 등록하면 이후 자동으로 AI가 작동합니다.</span>`;
+  } else {
+    reason = `Gemini 호출에 실패했습니다: <b>${escHtml(geminiErr || '알 수 없는 오류')}</b><br>
+      <span class="text-gray-500 font-normal">→ 키가 유효한지, 무료 한도(분당 요청 수)를 초과하지 않았는지 확인하세요.</span>`;
+  }
+  // PDF 텍스트 상태 진단
+  let pdfWarn = '';
+  if (!pdfText || pdfText.trim().length < 50) {
+    pdfWarn = `<div class="text-red-500 text-xs mb-2 font-semibold">
+      <i class="fa-solid fa-file-circle-xmark mr-1"></i>
+      PDF에서 텍스트를 읽지 못했습니다. PDF가 아직 로드 중이거나,
+      텍스트 없이 이미지로만 스캔된 PDF일 수 있습니다.
+      (스캔본은 검색·AI 기능을 사용할 수 없습니다)</div>`;
+  }
+
+  let html = `<div class="text-amber-600 text-xs mb-2 font-semibold leading-relaxed">
+    <i class="fa-solid fa-circle-info mr-1"></i> ${reason}
+  </div>` + pdfWarn;
+
+  if (hits.length) {
+    html += `<p class="text-[11px] text-gray-400 mb-1.5">대신 규정집에서 관련 조항을 검색했습니다:</p>`;
+    html += hits.slice(0, 5).map(h => `
+      <div class="bg-white border border-indigo-100 rounded-lg p-2.5 mb-1.5 cursor-pointer hover:bg-indigo-50 transition"
+           onclick="pdfPage=${h.item.page};renderPage(pdfPage);switchMode('pdf');">
+        <span class="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded mr-1">
+          ${h.item.page}p</span>
+        <span class="text-xs text-gray-600">…${escHtml(h.item.text.trim())}…</span>
+      </div>`).join('');
+  } else if (pdfText && pdfText.trim().length >= 50) {
+    html += `<p class="text-xs text-gray-400">"${escHtml(q)}"와 유사한 내용을 찾지 못했습니다.</p>`;
+  }
+  el.innerHTML = html;
 }
 
 function closeAiPanel() {
@@ -829,11 +999,20 @@ function switchSideTab(tab) {
   });
 }
 
+function saveGeminiKey() {
+  const v = document.getElementById('geminiKeyInput').value.trim();
+  if (!v) { showToast('키를 입력하세요.', 'error'); return; }
+  localStorage.setItem('gemini_api_key', v);
+  showToast('Gemini API 키가 저장되었습니다.');
+}
+
 function checkAdmin() {
   const pw = prompt('관리자 비밀번호를 입력하세요:');
   if (pw === ADMIN_PW) {
     isAdmin = true;
     openModal('adminModal');
+    const saved = localStorage.getItem('gemini_api_key');
+    if (saved) document.getElementById('geminiKeyInput').value = saved;
     renderDbList();
     showToast('관리자로 인증되었습니다.');
   } else if (pw !== null) {
